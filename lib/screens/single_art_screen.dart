@@ -18,6 +18,7 @@ class SingleArtScreen extends StatefulWidget {
 
 class _SingleArtScreenState extends State<SingleArtScreen> {
   final _textController = TextEditingController();
+  final _heroController = TextEditingController();
   final _rec = AudioRecorder();
   
   bool _useVoice = false;
@@ -35,6 +36,7 @@ class _SingleArtScreenState extends State<SingleArtScreen> {
   @override
   void dispose() {
     _textController.dispose();
+    _heroController.dispose();
     _timer?.cancel();
     _rec.dispose();
     super.dispose();
@@ -65,6 +67,7 @@ class _SingleArtScreenState extends State<SingleArtScreen> {
       _recordSeconds = 0;
       _audioPath = path;
     });
+    _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (!mounted) return;
       setState(() => _recordSeconds++);
@@ -74,23 +77,53 @@ class _SingleArtScreenState extends State<SingleArtScreen> {
 
   Future<void> _stopRecording() async {
     _timer?.cancel();
-    final path = await _rec.stop();
+    String? path;
+    try {
+      path = await _rec.stop();
+    } catch (_) {}
+    if (!mounted) return;
     setState(() {
       _recording = false;
-      _audioPath = path;
+      if (path != null) _audioPath = path;
     });
-    _snack('تم تسجيل فكرتك بنجاح 🎙️');
+    _snack(path != null ? 'تم تسجيل فكرتك بنجاح 🎙️' : 'تعذر حفظ التسجيل، جرّب تاني');
+  }
+
+  /// Mirrors backend clean_name(): letters and spaces only, max 20 chars.
+  String _cleanHeroName(String raw) {
+    final cleaned = raw
+        .replaceAll(RegExp(r'[^A-Za-z\u0600-\u06FF ]'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    return cleaned.length > 20 ? cleaned.substring(0, 20).trim() : cleaned;
   }
 
   Future<void> _generate() async {
-    final textDesc = _textController.text.trim();
-    if (!_useVoice && textDesc.isEmpty) {
+    if (_loading) return;
+    if (_recording) {
+      _snack('أوقف التسجيل أولاً ⏹️');
+      return;
+    }
+
+    final rawDesc = _textController.text.trim();
+    final heroName = _cleanHeroName(_heroController.text);
+
+    if (!_useVoice && rawDesc.isEmpty) {
       _snack('يرجى كتابة وصف للرسمة التي تتخيلها ✍️');
       return;
     }
     if (_useVoice && (_audioPath == null || !File(_audioPath!).existsSync())) {
       _snack('يرجى تسجيل فكرتك بالمايك أولاً 🎤');
       return;
+    }
+
+    // Voice mode: send ONLY the name hint (the hidden text field is ignored).
+    // Text mode: prefix the description with the hero name.
+    final String textDesc;
+    if (_useVoice) {
+      textDesc = heroName.isNotEmpty ? 'اسم المبدع/البطل: $heroName' : '';
+    } else {
+      textDesc = heroName.isNotEmpty ? 'اسم المبدع/البطل: $heroName. $rawDesc' : rawDesc;
     }
 
     setState(() => _loading = true);
@@ -107,7 +140,9 @@ class _SingleArtScreenState extends State<SingleArtScreen> {
       if (!mounted) return;
       _showResultDialog(res);
     } catch (e) {
-      if (mounted) _snack(e.toString().replaceAll('ApiException: ', ''));
+      if (mounted) {
+        _snack(e.toString().replaceAll('ApiException: ', ''));
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -230,6 +265,23 @@ class _SingleArtScreenState extends State<SingleArtScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Text('اسم المبدع / البطل:',
+                style: text.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _heroController,
+              maxLength: 20,
+              textInputAction: TextInputAction.next,
+              decoration: InputDecoration(
+                hintText: 'مثلاً: ليلى أو يوسف (اختياري)',
+                prefixIcon: const Icon(Icons.person_outline),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                filled: true,
+                fillColor: Colors.grey.shade50,
+              ),
+            ),
+            const SizedBox(height: 16),
+
             // Mode toggle: text vs voice
             Row(
               children: [
@@ -237,7 +289,10 @@ class _SingleArtScreenState extends State<SingleArtScreen> {
                   child: ChoiceChip(
                     label: const Center(child: Text('كتابة نص الوصف ✍️')),
                     selected: !_useVoice,
-                    onSelected: (v) => setState(() => _useVoice = false),
+                    onSelected: (v) async {
+                      if (_recording) await _stopRecording();
+                      if (mounted) setState(() => _useVoice = false);
+                    },
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -245,7 +300,10 @@ class _SingleArtScreenState extends State<SingleArtScreen> {
                   child: ChoiceChip(
                     label: const Center(child: Text('تسجيل بالصوت 🎤')),
                     selected: _useVoice,
-                    onSelected: (v) => setState(() => _useVoice = true),
+                    onSelected: (v) async {
+                      if (_recording) await _stopRecording();
+                      if (mounted) setState(() => _useVoice = true);
+                    },
                   ),
                 ),
               ],

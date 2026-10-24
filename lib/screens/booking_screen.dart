@@ -14,6 +14,7 @@ class BookingScreen extends StatefulWidget {
 
 class _BookingScreenState extends State<BookingScreen> {
   final _name = TextEditingController();
+  final _ipController = TextEditingController();
   String? _gender;               // no default: the parent must choose
   String? _age;                  // no default: the parent must choose
   String _artStyle = 'classic';  // classic | manga | mandala | sketch
@@ -22,6 +23,7 @@ class _BookingScreenState extends State<BookingScreen> {
   @override
   void dispose() {
     _name.dispose();
+    _ipController.dispose();
     super.dispose();
   }
 
@@ -43,7 +45,8 @@ class _BookingScreenState extends State<BookingScreen> {
   }
 
   void _showServerSettings(BuildContext context) {
-    final ipController = TextEditingController(text: ApiService.baseUrl);
+    _ipController.text = ApiService.baseUrl;
+    final ipController = _ipController;
     String status = '';
     showDialog(
       context: context,

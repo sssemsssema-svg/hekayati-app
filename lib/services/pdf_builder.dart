@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -10,12 +11,51 @@ import 'package:share_plus/share_plus.dart';
 import '../models/book.dart';
 
 class PdfBuilder {
+  /// Local picked image wins; otherwise fetch the AI image from imageUrl.
+  static Future<pw.ImageProvider?> _resolvePageImage(BookPage page) async {
+    final local = page.localImagePath;
+    if (local != null && local.isNotEmpty && File(local).existsSync()) {
+      try {
+        final bytes = await File(local).readAsBytes();
+        if (_isSupportedImage(bytes)) return pw.MemoryImage(bytes);
+      } catch (_) {}
+    }
+
+    final url = page.imageUrl.trim();
+    if (url.isEmpty) return null;
+    try {
+      final res = await http
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 30));
+      if (res.statusCode == 200 && _isSupportedImage(res.bodyBytes)) {
+        return pw.MemoryImage(res.bodyBytes);
+      }
+    } catch (_) {
+      // Network/timeout/bad URL: fall back to the placeholder box.
+    }
+    return null;
+  }
+
+  /// PNG or JPEG magic bytes only. Prevents a bad payload from crashing pdf.save().
+  static bool _isSupportedImage(Uint8List b) {
+    if (b.length < 4) return false;
+    final isPng = b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47;
+    final isJpeg = b[0] == 0xFF && b[1] == 0xD8;
+    return isPng || isJpeg;
+  }
+
   static Future<Uint8List> generate(Book book) async {
     final pdf = pw.Document();
 
     // Load Arabic Font
-    final arabicFont = await PdfGoogleFonts.cairoRegular();
-    final arabicBold = await PdfGoogleFonts.cairoBold();
+    final pw.Font arabicFont;
+    final pw.Font arabicBold;
+    try {
+      arabicFont = await PdfGoogleFonts.cairoRegular();
+      arabicBold = await PdfGoogleFonts.cairoBold();
+    } catch (_) {
+      throw Exception('تعذر تحميل خط Cairo، تأكد من اتصال الإنترنت');
+    }
 
     // 1. Cover Page
     pdf.addPage(
@@ -36,7 +76,10 @@ class PdfBuilder {
                     border: pw.Border.all(color: PdfColors.purple800, width: 3),
                   ),
                   child: pw.Center(
-                    child: pw.Text('📖', style: const pw.TextStyle(fontSize: 44)),
+                    child: pw.Text(
+                      book.title.isNotEmpty ? book.title.substring(0, 1) : 'ح',
+                      style: const pw.TextStyle(fontSize: 40, color: PdfColors.purple800),
+                    ),
                   ),
                 ),
                 pw.SizedBox(height: 24),
@@ -85,16 +128,13 @@ class PdfBuilder {
     );
 
     // 2. Story Pages
+    // Resolve all page images in parallel (local file first, then AI imageUrl).
+    final List<pw.ImageProvider?> pageImages =
+        await Future.wait(book.pages.map(_resolvePageImage));
+
     for (int i = 0; i < book.pages.length; i++) {
       final page = book.pages[i];
-      pw.ImageProvider? imageProvider;
-
-      if (page.localImagePath != null && File(page.localImagePath!).existsSync()) {
-        try {
-          final bytes = await File(page.localImagePath!).readAsBytes();
-          imageProvider = pw.MemoryImage(bytes);
-        } catch (_) {}
-      }
+      final pw.ImageProvider? imageProvider = pageImages[i];
 
       pdf.addPage(
         pw.Page(

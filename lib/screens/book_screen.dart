@@ -34,8 +34,11 @@ class _BookScreenState extends State<BookScreen> {
     try {
       await job();
       if (mounted) _snack(ok);
-    } catch (_) {
-      if (mounted) _snack('حصلت مشكلة، جرّب تاني 😢');
+    } catch (e) {
+      debugPrint('Book action failed: $e');
+      if (mounted) {
+        _snack('حصلت مشكلة: ${e.toString().replaceFirst('Exception: ', '')}');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -49,6 +52,7 @@ class _BookScreenState extends State<BookScreen> {
         maxHeight: 1600,
         imageQuality: 90,
       );
+      if (!mounted) return;
       if (img != null) {
         setState(() {
           page.localImagePath = img.path;
@@ -56,7 +60,7 @@ class _BookScreenState extends State<BookScreen> {
         _snack('تمت إضافة رسمة صفحة ${page.pageNumber} بنجاح! 🎨');
       }
     } catch (e) {
-      _snack('تعذر فتح المعرض 📷');
+      if (mounted) _snack('تعذر فتح المعرض 📷');
     }
   }
 
@@ -67,6 +71,7 @@ class _BookScreenState extends State<BookScreen> {
         maxHeight: 1600,
         imageQuality: 90,
       );
+      if (!mounted) return;
       if (images.isNotEmpty) {
         setState(() {
           for (int i = 0; i < images.length && i < widget.book.pages.length; i++) {
@@ -76,7 +81,7 @@ class _BookScreenState extends State<BookScreen> {
         _snack('تم تعيين ${images.length} صورة للصفحات بنجاح! 🖼️');
       }
     } catch (e) {
-      _snack('تعذر اختيار الصور 📷');
+      if (mounted) _snack('تعذر اختيار الصور 📷');
     }
   }
 
@@ -96,7 +101,9 @@ class _BookScreenState extends State<BookScreen> {
   }
 
   Widget _cover(TextTheme text, int totalPages) {
-    int imagesAttached = widget.book.pages.where((p) => p.localImagePath != null).length;
+    int imagesAttached = widget.book.pages
+        .where((p) => p.localImagePath != null || p.imageUrl.isNotEmpty)
+        .length;
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),

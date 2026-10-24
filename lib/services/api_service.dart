@@ -11,6 +11,9 @@ import '../models/order_model.dart';
 class ApiException implements Exception {
   final String message;
   ApiException(this.message);
+
+  @override
+  String toString() => message;
 }
 
 class SingleArtResponse {
@@ -116,6 +119,10 @@ class ApiService {
       return SingleArtResponse.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
     } on SocketException {
       throw ApiException('تعذر الاتصال بالسيرفر 📶 تأكد من اتصال الهاتف بالواي فاي');
+    } on TimeoutException {
+      throw ApiException('السيرفر أخد وقتاً أطول من المتوقع، جرّب تاني');
+    } on http.ClientException {
+      throw ApiException('تعذر الاتصال بالسيرفر 📶 تأكد من اتصال الهاتف بالواي فاي');
     } catch (e) {
       if (e is ApiException) rethrow;
       throw ApiException('حصلت مشكلة في توليد اللوحة ($e)');
@@ -157,6 +164,10 @@ class ApiService {
       return list.map((e) => CustomerOrder.fromJson(e)).toList();
     } on SocketException {
       throw ApiException('تعذر الاتصال بالسيرفر 📶 اتأكد من الواي فاي');
+    } on TimeoutException {
+      throw ApiException('السيرفر بطيء أو لا يستجيب، جرّب تاني');
+    } on http.ClientException {
+      throw ApiException('تعذر الاتصال بالسيرفر 📶');
     } catch (e) {
       if (e is ApiException) rethrow;
       throw ApiException('حدث خطأ أثناء تحميل الطلبات ($e)');
@@ -173,6 +184,12 @@ class ApiService {
         throw ApiException('تعذر معالجة الطلب (${res.statusCode})');
       }
       return jsonDecode(utf8.decode(res.bodyBytes));
+    } on SocketException {
+      throw ApiException('تعذر الاتصال بالسيرفر 📶 اتأكد من الواي فاي');
+    } on TimeoutException {
+      throw ApiException('السيرفر بطيء أو لا يستجيب، جرّب تاني');
+    } on http.ClientException {
+      throw ApiException('تعذر الاتصال بالسيرفر 📶');
     } catch (e) {
       if (e is ApiException) rethrow;
       throw ApiException('خطأ في معالجة الطلب ($e)');
